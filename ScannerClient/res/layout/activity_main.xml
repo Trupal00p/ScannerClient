@@ -10,6 +10,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
+        android:layout_margin="5dp"
         android:text="Current Bin Assigned To:" />
 
     <TextView
@@ -17,15 +18,29 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:text="Lisinopril 20 mg Tabs"
+        android:layout_margin="10dp"
+        android:text="Scan Bin To Begin"
         android:textAppearance="?android:attr/textAppearanceLarge" />
 
     <EditText
         android:id="@+id/editText1"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_margin="10dp"
         android:ems="10"
         android:inputType="text" />
+
+    <android.widget.GridLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <ListView
+        android:id="@+id/recentScanList"
+        android:layout_width="match_parent"
+        android:layout_height="fill_parent"
+        android:layout_weight="1"
+        android:scrollbarAlwaysDrawVerticalTrack="true" >
+    </ListView>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -41,28 +56,8 @@
             android:id="@+id/currentUserText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Q Public, John" />
+            android:text="null" />
+
     </LinearLayout>
-
-    <ScrollView
-        android:id="@+id/scrollView1"
-        android:layout_width="fill_parent"
-        android:layout_height="fill_parent"
-        android:fillViewport="true" >
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="fill_parent"
-            android:orientation="vertical" >
-
-            <ListView
-                android:id="@+id/recentScanList"
-                android:layout_width="match_parent"
-                android:layout_height="fill_parent" >
-            </ListView>
-
-        </LinearLayout>
-
-    </ScrollView>
 
 </LinearLayout>

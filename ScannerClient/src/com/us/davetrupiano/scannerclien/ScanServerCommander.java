@@ -7,14 +7,21 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map.Entry;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.DialogInterface;
 import android.os.AsyncTask;
+import android.os.Vibrator;
 import android.util.Log;
+import android.widget.ListView;
 import android.widget.TextView;
 
 
@@ -25,51 +32,34 @@ public class ScanServerCommander{
 	private final String TAG = ScanServerCommander.class.getSimpleName();
 	
 	private final String host;
-	private final String port;
 	private String sessionID;
 	private String userFullName;
 	private String currentBinDrugDisplay;
 	private String currentBinDrugRXCUI;
 	private String currentBinID;
-	
+	private Context context;
 	
 	private TextView currentBinDrugText;
 	private TextView currentUserFullNameText;
+	private ResponseAdapter scanHistoryAdapter;
 	
-	//commands sent to server
-	private final String CMD_OPEN_SESSION = "openSession";
-	private final String CMD_CHECK_SCAN = "scanCheck";
-	private final String CMD_REASSIGN_BIN = "reassignBin";
-	private final String CMD_GET_BIN_DISPLAY = "getBinDisplay";
+	private int errorCount;
 	
-	//parameters sent to server
-	private final String PARAM_BIN_ID = "binID";
-	private final String PARAM_SESSION_ID = "sessionID";
-	private final String PARAM_BARCODE = "barcode";
-	private final String PARAM_USER_HASH = "userHash";
+
 	
-	//parameters received from server
-	private final String JSON_SESSION_ID = "sessionID";
-	private final String JSON_DRUG_DISPLAY = "drugDisplay";
-	private final String JSON_RXCUI = "RXCUI";
-	private final String JSON_SCAN_SUCCESS = "matchSuccess";
-	private final String JSON_ERROR_MESSAGE = "errorMessage";
-	private final String JSON_RESPONSE_CODE = "responseCode";
-	
-	public ScanServerCommander(String host, String port, TextView currentBinDrugText,TextView currentUserFullNameText){
+	public ScanServerCommander(String host, TextView currentBinDrugText,TextView currentUserFullNameText, ListView scanHistoryList, Context context){
 		this.host = host;
-		this.port = port;
 		this.currentBinDrugText = currentBinDrugText;
 		this.currentUserFullNameText = currentUserFullNameText;
+		this.scanHistoryAdapter = (ResponseAdapter) scanHistoryList.getAdapter();
+		this.context = context;
 	}
-	
-	
 	
 	public void openSession(){//String userHash){
 		NetworkAsyncTasks nt = new NetworkAsyncTasks();
-		CommandBundle cmd = new CommandBundle(CMD_OPEN_SESSION);
+		CommandBundle cmd = new CommandBundle(Constants.CMD_OPEN_SESSION);
 		
-//		cmd.addParam(PARAM_USER_HASH, userHash);
+		cmd.addParam(Constants.PARAM_USER_HASH, "123");
 		
 		nt.execute(new CommandBundle[]{cmd});
 	}
@@ -77,32 +67,65 @@ public class ScanServerCommander{
 	public void changeCurrentBin(String binID){
 		//update current bin display text
 		NetworkAsyncTasks nt = new NetworkAsyncTasks();
-		CommandBundle cmd = new CommandBundle(CMD_GET_BIN_DISPLAY);
+		CommandBundle cmd = new CommandBundle(Constants.CMD_GET_BIN_DISPLAY);
 		
-		cmd.addParam(PARAM_BIN_ID, binID);
-		cmd.addParam(PARAM_SESSION_ID, sessionID);
+		cmd.addParam(Constants.PARAM_BIN_ID, binID);
+		cmd.addParam(Constants.PARAM_SESSION_ID, sessionID);
 		
 		nt.execute(new CommandBundle[]{cmd});
 	}
 	
 	public void checkScan(String rawBarcode){
 		NetworkAsyncTasks nt = new NetworkAsyncTasks();
-		CommandBundle cmd = new CommandBundle(CMD_CHECK_SCAN);
+		CommandBundle cmd = new CommandBundle(Constants.CMD_CHECK_SCAN);
 		
-		cmd.addParam(PARAM_BARCODE, rawBarcode);
-		cmd.addParam(PARAM_BIN_ID, currentBinID);
-		cmd.addParam(PARAM_SESSION_ID, sessionID);
+		cmd.addParam(Constants.PARAM_BARCODE, rawBarcode);
+		cmd.addParam(Constants.PARAM_BIN_ID, currentBinID);
+		cmd.addParam(Constants.PARAM_SESSION_ID, sessionID);
 		
 		nt.execute(new CommandBundle[]{cmd});
 	}
 	
+	public void addressScanResponse(final int position, final long id){
+		
+		if (scanHistoryAdapter.getItem(position).isMismatched()){
+			AlertDialog.Builder b = new AlertDialog.Builder(context);
+			b.setTitle("Select Appropriate Response");
+			b.setItems(R.array.scanMismatchResponses, new DialogInterface.OnClickListener() {
+				
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+					sendScanFeedBack(which, id, position);
+				}
+			});
+			b.create().show();
+		}
+		
+		
+	}
 	
-	private class NetworkAsyncTasks extends AsyncTask<CommandBundle, Void, HashMap<CommandBundle,JSONObject>>{
+	private void sendScanFeedBack(int which, long id, int position){
+		NetworkAsyncTasks nt = new NetworkAsyncTasks();
+		CommandBundle cmd = new CommandBundle(Constants.CMD_ADDRESS_MISMATCH);
+		
+		cmd.addParam(Constants.PARAM_MISMATCH_RESPONSE_ID, String.valueOf(which));
+		cmd.addParam(Constants.PARAM_SCAN_EVENT_ID, String.valueOf(id));
+		cmd.addParam(Constants.PARAM_SESSION_ID, sessionID);
+		cmd.addParam(Constants.PARAM_SCAN_HISTORY_POSITION, String.valueOf(position));
+		
+		nt.execute(new CommandBundle[]{cmd});
+	}
+	
+	public void decrementErrors(){
+		this.errorCount=errorCount-1;
+	}	
+	
+	private class NetworkAsyncTasks extends AsyncTask<CommandBundle, Void, ArrayList<ResponseBundle>>{
 
 		@Override
-		protected HashMap<CommandBundle,JSONObject> doInBackground(CommandBundle... params) {
+		protected ArrayList<ResponseBundle> doInBackground(CommandBundle... params) {
 			
-			HashMap<CommandBundle,JSONObject> retval = new HashMap<ScanServerCommander.CommandBundle, JSONObject>();
+			ArrayList<ResponseBundle> retval = new ArrayList<ResponseBundle>();
 			
 			for (CommandBundle cmdBundle: params){
 				
@@ -110,7 +133,8 @@ public class ScanServerCommander{
 				JSONObject jsonObj = sendCommand(cmdBundle);
 				
 				//return server response to UI thread
-				retval.put(cmdBundle, jsonObj);
+				//retval.put(cmdBundle, jsonObj);
+				retval.add(new ResponseBundle(cmdBundle, jsonObj));
 					
 				}
 			
@@ -119,32 +143,35 @@ public class ScanServerCommander{
 		}
 		
 		@Override
-		protected void onPostExecute(HashMap<CommandBundle,JSONObject> result) {
+		protected void onPostExecute(ArrayList<ResponseBundle> result) {
 			
-			for (CommandBundle cmdBundle: result.keySet()){
+			for (ResponseBundle rspBundle: result){
 				
-				JSONObject jsonObj = result.get(cmdBundle);
+				JSONObject jsonObj = rspBundle.getJSONRepsonse();
 				
 				if (jsonObj!=null){
 					
-					String cmd = cmdBundle.getCommand();
+					String cmd = rspBundle.cmdBundle.getCommand();
 					
-					if (cmd.equals(CMD_OPEN_SESSION)){
+					if (cmd.equals(Constants.CMD_OPEN_SESSION)){
 						
-						onOpenSession(jsonObj,cmdBundle);
+						onOpenSession(rspBundle);
 						
-					}else if (cmd.equals(CMD_CHECK_SCAN)){
+					}else if (cmd.equals(Constants.CMD_CHECK_SCAN)){
 						
-						onCheckScan(jsonObj,cmdBundle);
+						onCheckScan(rspBundle);
 						
-					}else if (cmd.equals(CMD_REASSIGN_BIN)){
+					}else if (cmd.equals(Constants.CMD_REASSIGN_BIN)){
 						
-						onReassignBin(jsonObj,cmdBundle);
+						onReassignBin(rspBundle);
 						
-					}else if (cmd.equals(CMD_GET_BIN_DISPLAY)){
+					}else if (cmd.equals(Constants.CMD_GET_BIN_DISPLAY)){
 						
-						onChangeBin(jsonObj,cmdBundle);
+						onChangeBin(rspBundle);
 						
+					} else if (cmd.equals(Constants.CMD_ADDRESS_MISMATCH)){
+						
+						onAddressMismatch(rspBundle);
 					}
 				}
 			}
@@ -153,77 +180,44 @@ public class ScanServerCommander{
 		}
 			
 		
-		private void onOpenSession(JSONObject jsonObj, CommandBundle cmdBundle){
+		private void onOpenSession(ResponseBundle rspBundle){
+			sessionID = rspBundle.getResponseString(Constants.JSON_SESSION_ID);
+			currentUserFullNameText.setText(sessionID);		
+			
+		}
+		
+		private void onCheckScan(ResponseBundle rspBundle){
+			
+			//update view adapter
+			if (rspBundle.getCommandString().equals(Constants.CMD_CHECK_SCAN)){
+				scanHistoryAdapter.addResponse(rspBundle);
+			}
+		}
+		
+		private void onReassignBin(ResponseBundle rspBundle){
+			
+			
+		}
+		
+		private void onChangeBin(ResponseBundle rspBundle){
 			//read JSON response
-			try {
-				sessionID = jsonObj.getString(JSON_SESSION_ID);
-			} catch (JSONException e) {
-				e.printStackTrace();
-			}
-			//update views
-			currentUserFullNameText.setText(sessionID);
-			
-		}
-		
-		private void onCheckScan(JSONObject jsonObj, CommandBundle cmdBundle){
-			//read JSON response
-			String success = "False";
-			try {
-				//update arrayadapter here TODO
-				success = jsonObj.getString(JSON_SCAN_SUCCESS);
-			} catch (JSONException e) {
-				e.printStackTrace();
-			}
+			currentBinDrugDisplay = rspBundle.getResponseString(Constants.JSON_DRUG_DISPLAY);
+			currentBinDrugRXCUI = rspBundle.getResponseString(Constants.JSON_RXCUI);
 			
 			//update views
-			currentUserFullNameText.setText(success);
+			currentBinDrugText.setText(currentBinDrugDisplay);
 			
-			
-		}
-		
-		private void onReassignBin(JSONObject jsonObj, CommandBundle cmdBundle){
+			//change current binID
+			currentBinID = rspBundle.getCommandParam(Constants.PARAM_BIN_ID);			
 			
 		}
 		
-		private void onChangeBin(JSONObject jsonObj, CommandBundle cmdBundle){
-			
-			try {
-				
-				//read JSON response
-				currentBinDrugDisplay = jsonObj.getString(JSON_DRUG_DISPLAY);
-				currentBinDrugRXCUI = jsonObj.getString(JSON_RXCUI);
-				
-				//update views
-				currentBinDrugText.setText(currentBinDrugDisplay);
-				
-				//change current binID
-				currentBinID = cmdBundle.getParams().get(PARAM_BIN_ID);
-				
-			} catch (JSONException e) {
-				Log.d(TAG, "Failed to change bin unreadable response");
-				e.printStackTrace();
-			}			
-			
-		}
-		
-		private String buildRequestURL(CommandBundle cmdBundle){
-			StringBuilder sb = new StringBuilder();
-			//build base url
-			sb.append("http://").append(host).append(":").append(port).append("/").append(cmdBundle.getCommand());
-			//check for empty parameters
-			if (cmdBundle.getParams() != null){
-				//append ? to begin adding parameters
-				sb.append("?");
-				for (Entry<String,String> pair : cmdBundle.getParams().entrySet()){
-					//append "key=value&" to end of string
-					sb.append(pair.getKey()).append("=").append(pair.getValue()).append("&");
-				}
-				//delete last "&" from string
-				sb.deleteCharAt(sb.length()-1);
+		private void onAddressMismatch(ResponseBundle rspBundle){
+			int position = rspBundle.getResponseInt(Constants.JSON_SCAN_EVENT_ID, -1);
+			if (position!=-1){
+				scanHistoryAdapter.addressResponse(position);
 			}
-			//return URL
 			
-			return sb.toString();
 		}
 		
 		private JSONObject sendCommand(CommandBundle cmdBundle){
@@ -233,7 +227,7 @@ public class ScanServerCommander{
 			URL url;
 			
 			//build url string
-			String requestString = buildRequestURL(cmdBundle);
+			String requestString = cmdBundle.getRequestURLString();
 			
 			//build,send and read request
 			try {
@@ -246,6 +240,7 @@ public class ScanServerCommander{
 				jobj = readStream(in);
 				
 			} catch (MalformedURLException e) {
+				Log.d(TAG,"Malformed URL");
 				e.printStackTrace();
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -320,6 +315,117 @@ public class ScanServerCommander{
 		public String getCommand(){
 			return cmd;
 		}
+		
+		private String getRequestURLString(){
+			StringBuilder sb = new StringBuilder();
+			//build base url
+			sb.append("http://").append(host).append("/").append(cmd);
+			//check for empty parameters
+			if (parameters != null){
+				//append ? to begin adding parameters
+				sb.append("?");
+				for (Entry<String,String> pair : parameters.entrySet()){
+					//append "key=value&" to end of string
+					sb.append(pair.getKey()).append("=").append(pair.getValue()).append("&");
+				}
+				//delete last "&" from string
+				sb.deleteCharAt(sb.length()-1);
+			}
+			//return URL
+			
+			return sb.toString();
+		}
+	}
+	
+	public class ResponseBundle{
+		
+		private CommandBundle cmdBundle;
+		private JSONObject jsonObj;
+		private int mismatchAddressed;
+		
+		public ResponseBundle(CommandBundle cmdBundle, JSONObject jsonObj){
+			this.cmdBundle=cmdBundle;
+			this.jsonObj = jsonObj;
+			try{
+				if (jsonObj.getBoolean(Constants.JSON_SCAN_SUCCESS)){
+					mismatchAddressed  = Constants.MM_STATUS_ADDRESSED;
+				}else{
+					mismatchAddressed = Constants.MM_STATUS_NOT_ADDRESSED;
+				}
+					
+			} catch (Exception e){
+				mismatchAddressed = Constants.MM_STATUS_NA;
+			}
+		}
+		
+		public String getCommandString(){
+			return cmdBundle.getCommand();
+		}
+		
+		public String getCommandParam(String key){
+			return cmdBundle.getParams().get(key);
+		}
+		
+		public JSONObject getJSONRepsonse(){
+			return jsonObj;
+		}
+		
+		public void addressMismatch(){
+			mismatchAddressed = Constants.MM_STATUS_ADDRESSED;
+		}
+		
+		public boolean isMismatched(){
+			if (mismatchAddressed==Constants.MM_STATUS_NOT_ADDRESSED){
+				return true;
+			}else{
+				return false;
+			}
+		}
+		
+		public String getResponseString(String key){
+			String retval;
+			try{
+				retval = jsonObj.getString(key);
+			}catch (Exception e){
+				try {
+					retval = jsonObj.getString(Constants.JSON_ERROR_MESSAGE);
+				} catch (JSONException e1) {
+					retval = "No Server Response";
+				}
+			}
+			return retval;
+		}
+		
+		public boolean getResponseBoolean(String key, boolean onErrorValue){
+			boolean retval;
+			try{
+				retval = jsonObj.getBoolean(key);
+			}catch (Exception e){
+				retval = onErrorValue;
+			}
+			return retval;
+		}
+		
+		public int getResponseInt(String key, int onErrorValue){
+			int retval;
+			try{
+				retval = jsonObj.getInt(key);
+			}catch (Exception e){
+				retval = onErrorValue;
+			}
+			return retval;
+		}
+		
+		public JSONArray getResponseArray(String key){
+			JSONArray retval;
+			try{
+				retval = jsonObj.getJSONArray(key);
+			}catch (Exception e){
+				retval = new JSONArray();
+			}
+			return retval;
+		}
+		
 	}
 	
 }
