@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" android:key="defaults">
+    <PreferenceCategory android:title="Configure Connection" android:key="connection">
+        <EditTextPreference android:title="Host Address" android:key="host" android:defaultValue="192.168.2.2:8080" android:enabled="true"/>
+    </PreferenceCategory>
+    
+
+</PreferenceScreen>

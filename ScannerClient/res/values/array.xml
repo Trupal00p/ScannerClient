@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="scanMismatchResponses">
+        <item >True Mismatch</item>
+        <item >Bin/Drug scanned in wrong order</item>
+        <item >Drug doesn\'t scan</item>
+        <item >Bin incorrectly assigned</item>
+    </string-array>
+    
+</resources>

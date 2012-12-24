@@ -19,7 +19,6 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.os.AsyncTask;
-import android.os.Vibrator;
 import android.util.Log;
 import android.widget.ListView;
 import android.widget.TextView;
